@@ -41,8 +41,8 @@ class CrawlSite extends Job implements ShouldQueue
      */
     public function handle()
     {
-        $links = $emails = [];
-        $result = $this->recursiveFunction($this->site->url, $links, $emails);
+        $links = $emails = $directories = [];
+        $result = $this->recursiveFunction($this->site->url, $links, $emails, $directories);
     }
 
     /**
@@ -51,7 +51,7 @@ class CrawlSite extends Job implements ShouldQueue
      * @param   array   links already parsed
      * @return  void
      */
-    protected function recursiveFunction($url, &$visitedLinks, &$foundEmails, $depth = 0)
+    protected function recursiveFunction($url, &$visitedLinks, &$foundEmails, &$readableDirectories, $depth = 0)
     {
         // Check to see if the url has already been visited
         if (in_array($url, $visitedLinks)) {
@@ -99,6 +99,9 @@ class CrawlSite extends Job implements ShouldQueue
         if ($urlType == 'file') {
             return;
         }
+
+        // 
+        $idDir = is_dir($url);
 
         // Get the html for the current page
         $html = $this->loadPage($url);
@@ -151,7 +154,7 @@ class CrawlSite extends Job implements ShouldQueue
             }
 
             if (!$skipLink) {
-                $this->recursiveFunction($link, $visitedLinks, $foundEmails, $depth + 1);
+                $this->recursiveFunction($link, $visitedLinks, $foundEmails, $readableDirectories, $depth + 1);
             }
         }
 
