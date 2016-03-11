@@ -24,20 +24,20 @@ class CrawlSite extends Job implements ShouldQueue
     /**
      * Create a new job instance.
      *
-     * return void
+     * @return void
      */
     public function __construct(Site $site)
     {
         $this->site = $site;
         $this->userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/48.0.2564.109 Safari/537.36';
         $this->maxDepth = 5;
-        $this->maxLinks = 200;
+        $this->maxLinks = 500;
     }
 
     /**
      * Execute the job.
      *
-     * return void
+     * @return void
      */
     public function handle()
     {
@@ -47,52 +47,47 @@ class CrawlSite extends Job implements ShouldQueue
 
     /**
      * Recursive function for parsing web pages
-     * param   string  the url of the page to parse
-     * param   array   links already parsed
-     * return  void
+     * @param   string  the url of the page to parse
+     * @param   array   links already parsed
+     * @return  void
      */
-    protected function recursiveFunction($url, &$visitedLinks, &$foundEmails, &$readableDirectories, $depth = 0, $isDir = false)
+    protected function recursiveFunction($url, &$visitedLinks, &$foundEmails, &$readableDirectories, $depth = 0)
     {
-        // Sanitize the url by removing the query string and trailing slashes
-        $url = rtrim(strtok($url, '?'), '/');
-        
-        // Split out parts of the url for easier examination
-        $parsedURL = parse_url($url);
-        $urlBase = (isset($parsedURL['scheme']) ? $parsedURL['scheme'] : '').'://'.(isset($parsedURL['host']) ? $parsedURL['host'] : '');
-        $urlPath = isset($parsedURL['path']) ? $parsedURL['path'] : '';
-        $urlExtension = pathinfo($urlPath, PATHINFO_EXTENSION);
-        $urlType = $isDir ? 'dir' : ($urlExtension ? 'file' : 'page');
-
-        // Determine if the current url needs to be processed
-        //---------------------------------------------------------------------
-
-        // Check if the url has already been processed
+        // Check to see if the url has already been visited
         if (in_array($url, $visitedLinks)) {
             return;
         }
 
-        // Check if the current depth is within tolerance
         if ($depth > $this->maxDepth) {
             return;
         }
 
-        // Check if the number of links visited exceeds tolerance
-        if (count($visitedLinks) > $this->maxLinks) {
-            return;
-        }
-
-        // Check if the url contains an excluded extension (eg: css files)
-        if (in_array($urlExtension, Config::get('crawl.excludeFileExtensions'))) {
-            return;
-        }
-
-        // Store information about the current url
-        //---------------------------------------------------------------------
-
         // Set the current url as being visited
         $visitedLinks[] = $url;
 
-        // Store a new link record in the database
+        $urlType = 'page';
+        $urlExtension = '';
+
+        // Check if the url is to a valid web page
+        $pageExtensions = Config::get('crawl.pageExtensions');
+        foreach ($pageExtensions as $extension) {
+            if (strpos($url, '.'.$extension) !== false) {
+                $urlExtension = $extension;
+                break;
+            }
+        }
+
+        // Check if the url is a desired file
+        $fileExtensions = Config::get('crawl.fileExtensions');
+        foreach ($fileExtensions as $extension) {
+            if (strpos($url, '.'.$extension) !== false) {
+                $urlType = 'file';
+                $urlExtension = $extension;
+                break;
+            }
+        }
+
+        // Process/store data for the current url here
         $link = new Link();
         $link->site_id = $this->site->id;
         $link->url = $url;
@@ -100,62 +95,19 @@ class CrawlSite extends Job implements ShouldQueue
         $link->extension = $urlExtension;
         $link->save();
 
-        // Check all bases of the url for readable directories
-        //---------------------------------------------------------------------
-
-        $dir = $url;
-        $nextDir = '';
-        $links = [];
-        while ($dir && strlen($dir) > 6 && $dir != $nextDir) {
-            if ($nextDir) {
-                $dir = $nextDir;
-            }
-
-            $dir = strtolower(rtrim($dir, '/'));
-            $nextDir = strtolower(rtrim(substr($dir, 0, strrpos($dir, '/')), '/'));
-
-            if (!$dir || $dir == 'http:') {
-                break;
-            }
-
-            $handle = @fopen($dir, "r");
-
-            if ($handle == false) {
-                continue;
-            }
-
-            if (in_array($dir, $visitedLinks) || in_array($dir, $readableDirectories)) {
-                continue;
-            }
-
-            $contents = stream_get_contents($handle);
-
-            if (!$contents) {
-                continue;
-            }
-
-            $links = $this->getDirectories($contents, $dir);
-
-            if ($links) {
-                foreach ($links as $link) {
-                    $this->recursiveFunction($link, $visitedLinks, $foundEmails, $readableDirectories, $depth + 1, true);
-                }
-            }
-        }
-
-        // Get the page content of the url
-        $urlContent = $this->getContent($url);
-
-        // If the url has no content there nothing else to do with it
-        if (!$urlContent) {
+        // If the url is to a file, don't search it
+        if ($urlType == 'file') {
             return;
         }
 
-        // Parse the page content for email addresses
-        //---------------------------------------------------------------------
+        // 
+        $idDir = is_dir($url);
 
-        // Get all the email addresses in the current page content
-        $emails = $this->getEmails($urlContent, $url);
+        // Get the html for the current page
+        $html = $this->loadPage($url);
+
+        // Get all the email addresses in the current page
+        $emails = $this->getEmails($url, $html);
 
         if ($emails) {
             foreach ($emails as $emailAddress) {
@@ -165,7 +117,6 @@ class CrawlSite extends Job implements ShouldQueue
                     continue;
                 }
 
-                // Store a new email record in the database
                 $email = new Email();
                 $email->site_id = $this->site->id;
                 $email->address = $emailAddress;
@@ -175,11 +126,8 @@ class CrawlSite extends Job implements ShouldQueue
             }
         }
 
-        // Parse the page content for additional urls
-        //---------------------------------------------------------------------
-
-        // Get all the urls within the current page content
-        $links = $this->getLinks($urlContent, $url);
+        // Get all links in the current page
+        $links = $this->getLinks($url, $html);
 
         // If there are no links found, no need to continue with this url
         if (!count($links)) {
@@ -187,7 +135,27 @@ class CrawlSite extends Job implements ShouldQueue
         }
 
         foreach ($links as $link) {
-            $this->recursiveFunction($link, $visitedLinks, $foundEmails, $readableDirectories, $depth + 1);
+            $skipLink = false;
+
+            $excludeExtensions = Config::get('crawl.excludeExtensions');
+            foreach ($excludeExtensions as $extension) {
+                if (strpos($link, '.'.$extension) !== false) {
+                    $skipLink = true;
+                    break;
+                }
+            }
+
+            if (in_array($link, $visitedLinks)) {
+                $skipLink = true;
+            }
+
+            if (count($visitedLinks) > $this->maxLinks) {
+                $skipLink = true;
+            }
+
+            if (!$skipLink) {
+                $this->recursiveFunction($link, $visitedLinks, $foundEmails, $readableDirectories, $depth + 1);
+            }
         }
 
         return;
@@ -195,10 +163,10 @@ class CrawlSite extends Job implements ShouldQueue
 
     /**
      * Load an html page
-     * param   string  the url of the page to load
-     * return  bool
+     * @param   string  the url of the page to load
+     * @return  bool
      */
-    protected function getContent($url)
+    protected function loadPage($url)
     {
         // If there is no valid currentURL then no HTML can be parsed
         if (!$url) {
@@ -250,7 +218,7 @@ class CrawlSite extends Job implements ShouldQueue
 
         $errno = 0;
         $errstr = "";
-        $fp = fsockopen($target, $port, $errno, $errstr, $fsocketTimeout);
+        $fp = @fsockopen($target, $port, $errno, $errstr, $fsocketTimeout);
 
         if (!$fp) {
             return false;        
@@ -277,23 +245,21 @@ class CrawlSite extends Job implements ShouldQueue
                 $contents['state'] = "ok";
             }
 
-            if ($contents['state'] == "ok") {
-                return substr($data, strpos($data, "\r\n\r\n") + 4);
-            }
+            $contents['file'] = substr($data, strpos($data, "\r\n\r\n") + 4);
         }
 
-        return false;
+        // TODO: more error-handling is needed
+        return $contents['file'];
     }
 
     /**
      * Find all links in the current page
-     * return  array
+     * @return  array
      */
-    protected function getLinks($content, $url = '')
+    protected function getLinks($url, $html)
     {
         $urlPattern = "/[href|HREF]\s*=\s*[\'\"]?([+:%\/\?~=&;\\\(\),._a-zA-Z0-9-]*)(#[.a-zA-Z0-9-]*)?[\'\" ]?(\s*rel\s*=\s*[\'\"]?(nofollow)[\'\"]?)?/i";
-        //$urlPattern = '/<a href="(.+)">/';
-        preg_match_all($urlPattern, $content, $urlMatches);
+        preg_match_all($urlPattern, $html, $urlMatches);
 
         $links = array();
         foreach ($urlMatches[1] as $link) {
@@ -301,17 +267,20 @@ class CrawlSite extends Job implements ShouldQueue
                 continue;
             }
 
-            if ($url) {
-                if (strpos($link, '/') === 0) {
-                    $link = rtrim($url, '/') . $link;
-                }
+            if (strpos($link, 'http') !== 0 && strpos($link, '/') !== 0) {
+                continue;
+            }
 
-                if (strrpos($link, $url) !== 0) {
-                    continue;
-                }
+            if (strpos($link, '/') === 0) {
+                $link = rtrim($url, '/') . $link;
+            }
+
+            if (strpos($link, $url) !== 0) {
+                continue;
             }
 
             $link = rtrim($link, '/');
+            $link .= '/';
             $link = strtolower($link);
 
             $links[] = $link;
@@ -322,53 +291,24 @@ class CrawlSite extends Job implements ShouldQueue
 
     /**
      * Find all links in the current page
-     * return  array
+     * @return  array
      */
-    protected function getEmails($content, $url = '')
+    protected function getEmails($url, $html)
     {
-        $emails = array();
         $emailPattern = '`\<a([^>]+)href\=\"mailto\:([^">]+)\"([^>]*)\>(.*?)\<\/a\>`ism';
-        preg_match_all($emailPattern, $content, $emailMatches);
-
-        if (!isset($emailMatches[2]) || !is_array($emailMatches[2])) {
-            return $emails;
-        }
-
-        foreach ($emailMatches[2] as $email) {
-            if (!$email || $email == '/') {
-                continue;
-            }
-
-            if (strpos($email, '@') === false) {
-                continue;
-            }
-
-            $email = strtolower(rtrim($email, '/'));
-
-            $emails[] = $email;
-        }
-
-        return $emails;
-    }
-
-    /**
-     * Find all directory links in the current page
-     * return  array
-     */
-    protected function getDirectories($content, $url = '')
-    {
-        //$urlPattern = "/[href|HREF]\s*=\s*[\'\"]?([+:%\/\?~=&;\\\(\),._a-zA-Z0-9-]*)(#[.a-zA-Z0-9-]*)?[\'\" ]?(\s*rel\s*=\s*[\'\"]?(nofollow)[\'\"]?)?/i";
-        $urlPattern = '/<a href="([a-zA-Z0-9\-\_\/\.]+)">/';
-        preg_match_all($urlPattern, $content, $urlMatches);
+        preg_match_all($emailPattern, $html, $emailMatches);
 
         $links = array();
-        foreach ($urlMatches[1] as $link) {
+        foreach ($emailMatches[2] as $link) {
             if (!$link || $link == '/') {
                 continue;
             }
 
-            $link = strtolower(rtrim(trim($link, '/'), '/'));
-            $link = ($url . '/' . $link);
+            if (strpos($link, '@') === false) {
+                continue;
+            }
+
+            $link = rtrim($link, '/');
 
             $links[] = $link;
         }
