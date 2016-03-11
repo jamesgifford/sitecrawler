@@ -16,7 +16,7 @@ class CreateLinksTable extends Migration
             $table->increments('id');
             $table->integer('site_id')->unsigned()->index();
             $table->text('url');
-            $table->enum('type', ['page', 'file']);
+            $table->enum('type', ['page', 'file', 'dir']);
             $table->string('extension');
             $table->timestamps();
         });
