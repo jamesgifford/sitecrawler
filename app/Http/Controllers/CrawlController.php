@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 
 use App\Models\Site;
 use App\Jobs\CrawlSite;
+use App\Jobs\LinkWorker;
 use App\Http\Requests;
 use App\Http\Controllers\Controller;
 use App\Classes\HTMLParser;
@@ -17,8 +18,18 @@ class CrawlController extends Controller
         $sites = Site::all();
 
         foreach ($sites as $site) {
+            dispatch(new LinkWorker($site));
+        }
+
+        echo 'Done!';
+
+        /*
+        $sites = Site::all();
+
+        foreach ($sites as $site) {
             $job = (new CrawlSite($site));
             dispatch($job);
         }
+        */
     }
 }

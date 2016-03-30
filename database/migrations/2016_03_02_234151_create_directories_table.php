@@ -3,7 +3,7 @@
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Migrations\Migration;
 
-class CreateLinksTable extends Migration
+class CreateDirectoriesTable extends Migration
 {
     /**
      * Run the migrations.
@@ -12,15 +12,12 @@ class CreateLinksTable extends Migration
      */
     public function up()
     {
-        Schema::create('links', function (Blueprint $table) {
+        Schema::create('directories', function (Blueprint $table) {
             $table->increments('id');
             $table->integer('site_id')->unsigned()->index();
             $table->string('url', 2083);
-            $table->string('extension');
-            $table->boolean('is_locked');
+            $table->integer('num_items');
             $table->timestamps();
-            $table->timestamp('started_at')->nullable();
-            $table->timestamp('finished_at')->nullable();
         });
     }
 
@@ -31,6 +28,6 @@ class CreateLinksTable extends Migration
      */
     public function down()
     {
-        Schema::drop('links');
+        Schema::drop('directories');
     }
 }
