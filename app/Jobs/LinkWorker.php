@@ -36,6 +36,10 @@ class LinkWorker extends Job implements ShouldQueue
         $this->count = $count;
         $this->userAgent = Config::get('crawl.userAgent');
         $this->depth = $depth;
+
+        if ($this->count > 50) {
+            exit();
+        }
     }
 
     /**
@@ -68,9 +72,6 @@ class LinkWorker extends Job implements ShouldQueue
             return;
         }
 
-        /* Check the url with the database
-        ---------------------------------------------------------------------*/
-
         $link = Link::where('url', $url)->first();
 
         // If the url is already in the database, there's nothing else to do
@@ -78,12 +79,8 @@ class LinkWorker extends Job implements ShouldQueue
             return;
         }
 
-        // Store a new link record in the database
-        $link = new Link();
-        $link->site_id = $this->site->id;
-        $link->url = $url;
-        $link->extension = $urlExtension;
-        $link->save();
+        /* Validate the url content
+        ---------------------------------------------------------------------*/
 
         // Get the page content of the url
         $urlContent = $this->getContent($url);
@@ -92,6 +89,27 @@ class LinkWorker extends Job implements ShouldQueue
         if (!$urlContent) {
             return;
         }
+
+        // If the url leads to a 404 or otherwise missing page, move on
+        $pattern = "/<title>(.*?)<\/title>/si";
+        preg_match($pattern, $urlContent, $pageTitleMatch);
+        $pageTitle = strtolower(isset($pageTitleMatch[1]) ? $pageTitleMatch[1] : '');
+
+        if (strpos($pageTitle, '404') !== false || 
+            strpos($pageTitle, 'page not found') !== false || 
+            strpos($pageTitle, 'bad request') !== false) {
+            return;
+        }
+
+        /* Save the url to the database
+        ---------------------------------------------------------------------*/
+
+        // Store a new link record in the database
+        $link = new Link();
+        $link->site_id = $this->site->id;
+        $link->url = $url;
+        $link->extension = $urlExtension;
+        $link->save();
 
         /* Check the parts of the url for readable directories
         ---------------------------------------------------------------------*/
