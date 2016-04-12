@@ -22,14 +22,5 @@ class CrawlController extends Controller
         }
 
         echo 'Done!';
-
-        /*
-        $sites = Site::all();
-
-        foreach ($sites as $site) {
-            $job = (new CrawlSite($site));
-            dispatch($job);
-        }
-        */
     }
 }
