@@ -42,9 +42,7 @@ class CrawlSites extends Command
         $sites = Site::all();
 
         foreach ($sites as $site) {
-            $this->line($site->url);
-            $job = (new CrawlSite($site));
-            dispatch($job);
+            dispatch(new LinkWorker($site));
         }
     }
 }
