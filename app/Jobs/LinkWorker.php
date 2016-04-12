@@ -68,13 +68,6 @@ class LinkWorker extends Job implements ShouldQueue
             return;
         }
 
-        $link = Link::where('url', $url)->first();
-
-        // If the url is already in the database, there's nothing else to do
-        if ($link !== null) {
-            return;
-        }
-
         /* Validate the url content
         ---------------------------------------------------------------------*/
 
@@ -100,12 +93,17 @@ class LinkWorker extends Job implements ShouldQueue
         /* Save the url to the database
         ---------------------------------------------------------------------*/
 
-        // Store a new link record in the database
-        $link = new Link();
-        $link->site_id = $this->site->id;
-        $link->url = $url;
-        $link->extension = $urlExtension;
-        $link->save();
+        $link = Link::where('url', $url)->first();
+
+        // If the url is already in the database don't re-add it
+        if ($link == null) {
+            // Store a new link record in the database
+            $link = new Link();
+            $link->site_id = $this->site->id;
+            $link->url = $url;
+            $link->extension = $urlExtension;
+            $link->save();
+        }
 
         /* Check the parts of the url for readable directories
         ---------------------------------------------------------------------*/
