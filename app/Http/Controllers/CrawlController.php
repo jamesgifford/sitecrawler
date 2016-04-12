@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 
 use App\Models\Site;
-use App\Jobs\CrawlSite;
 use App\Jobs\LinkWorker;
 use App\Http\Requests;
 use App\Http\Controllers\Controller;
@@ -19,6 +18,9 @@ class CrawlController extends Controller
 
         foreach ($sites as $site) {
             dispatch(new LinkWorker($site));
+
+            $site->updated_at = date('Y-m-d H:i:s');
+            $site->update();
         }
 
         echo 'Done!';

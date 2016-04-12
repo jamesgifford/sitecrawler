@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Jobs\CrawlSite;
+use App\Jobs\LinkWorker;
 use App\Models\Site;
 use Illuminate\Console\Command;
 

@@ -36,10 +36,6 @@ class LinkWorker extends Job implements ShouldQueue
         $this->count = $count;
         $this->userAgent = Config::get('crawl.userAgent');
         $this->depth = $depth;
-
-        if ($this->count > 50) {
-            exit();
-        }
     }
 
     /**
@@ -223,6 +219,18 @@ class LinkWorker extends Job implements ShouldQueue
 
         $url = rtrim($url, '/');
         $url .= '/';
+
+        // Try loading the page the easy way first
+        try {
+            $contents = @file_get_contents($url);
+        } 
+        catch (Exception $e) {
+            return;
+        }
+        
+        if ($contents) {
+            return $contents;
+        }
 
         $urlParts = parse_url($url);
         $path = $urlParts['path'];
